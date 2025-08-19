@@ -1,11 +1,9 @@
 import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
 import { Document } from 'langchain/document';
-import pdfParse from 'pdf-parse';
 import Papa from 'papaparse';
 import { JSDOM } from 'jsdom';
 import { Readability } from '@mozilla/readability';
 
-// Initialize text splitter
 const textSplitter = new RecursiveCharacterTextSplitter({
   chunkSize: 1200,
   chunkOverlap: 200,
@@ -13,120 +11,94 @@ const textSplitter = new RecursiveCharacterTextSplitter({
 });
 
 export async function processFile(file, fileBuffer) {
+  console.log(`Processing file: ${file.name}, type: ${file.type}`);
+  
   let content = '';
-  const fileName = file.name;
-  const fileType = file.type;
-
+  
   try {
-    if (fileType === 'application/pdf') {
-      // Process PDF
-      const pdfData = await pdfParse(fileBuffer);
+    if (file.type === 'application/pdf') {
+      // Dynamic import for pdf-parse
+      const pdfParse = await import('pdf-parse');
+      const parser = pdfParse.default || pdfParse;
+      const pdfData = await parser(fileBuffer);
       content = pdfData.text;
-    } else if (fileType === 'text/csv' || fileName.endsWith('.csv')) {
-      // Process CSV
+    } else if (file.type === 'text/csv' || file.name.endsWith('.csv')) {
       const csvText = fileBuffer.toString('utf-8');
       const parsed = Papa.parse(csvText, { header: true });
-      
-      // Convert CSV to readable text
-      content = parsed.data.map(row => {
-        return Object.entries(row)
-          .map(([key, value]) => `${key}: ${value}`)
-          .join(', ');
-      }).join('\n');
+      content = parsed.data
+        .map(row => Object.entries(row).map(([k, v]) => `${k}: ${v}`).join(', '))
+        .join('\n');
     } else if (
-      fileType === 'text/plain' ||
-      fileType === 'text/markdown' ||
-      fileName.endsWith('.txt') ||
-      fileName.endsWith('.md')
+      file.type === 'text/plain' ||
+      file.type === 'text/markdown' ||
+      file.name.endsWith('.txt') ||
+      file.name.endsWith('.md')
     ) {
-      // Process text files
       content = fileBuffer.toString('utf-8');
     } else {
-      throw new Error(`Unsupported file type: ${fileType}`);
+      throw new Error(`Unsupported file type: ${file.type}`);
     }
 
-    // Split into chunks
-    const documents = await textSplitter.createDocuments([content], [
-      {
-        source: fileName,
-        type: 'file',
-        originalType: fileType,
+    const chunks = await textSplitter.splitText(content);
+    return chunks.map((chunk, index) => new Document({
+      pageContent: chunk,
+      metadata: {
+        source: file.name,
+        type: file.type,
+        chunk: index,
+        totalChunks: chunks.length,
       },
-    ]);
-
-    return documents;
+    }));
   } catch (error) {
-    console.error(`Error processing file ${fileName}:`, error);
-    throw error;
+    console.error('Error processing file:', error);
+    throw new Error(`Failed to process file: ${error.message}`);
   }
 }
 
 export async function processText(text) {
   try {
-    // Split text into chunks
-    const documents = await textSplitter.createDocuments([text], [
-      {
-        source: 'pasted_text',
+    const chunks = await textSplitter.splitText(text);
+    return chunks.map((chunk, index) => new Document({
+      pageContent: chunk,
+      metadata: {
+        source: 'direct_text',
         type: 'text',
-        timestamp: new Date().toISOString(),
+        chunk: index,
+        totalChunks: chunks.length,
       },
-    ]);
-
-    return documents;
+    }));
   } catch (error) {
     console.error('Error processing text:', error);
-    throw error;
+    throw new Error(`Failed to process text: ${error.message}`);
   }
 }
 
 export async function processUrl(url) {
   try {
-    // Fetch the webpage
     const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch URL: ${response.status}`);
-    }
-
     const html = await response.text();
     
-    // Parse with JSDOM and Readability
-    const dom = new JSDOM(html, { url });
+    const dom = new JSDOM(html);
     const reader = new Readability(dom.window.document);
     const article = reader.parse();
-
-    if (!article) {
-      throw new Error('Could not parse article content from URL');
-    }
-
-    const content = article.textContent;
     
-    // Split into chunks
-    const documents = await textSplitter.createDocuments([content], [
-      {
+    if (!article) {
+      throw new Error('Could not extract content from URL');
+    }
+    
+    const chunks = await textSplitter.splitText(article.textContent);
+    return chunks.map((chunk, index) => new Document({
+      pageContent: chunk,
+      metadata: {
         source: url,
         type: 'url',
-        title: article.title || 'Untitled',
-        timestamp: new Date().toISOString(),
+        title: article.title,
+        chunk: index,
+        totalChunks: chunks.length,
       },
-    ]);
-
-    return documents;
+    }));
   } catch (error) {
     console.error('Error processing URL:', error);
-    throw error;
-  }
-}
-
-export async function getAllDocuments() {
-  // This would typically query your database/vector store
-  // For now, we'll return a placeholder
-  try {
-    const vectorStore = await import('./qdrant.js').then(m => m.getVectorStore());
-    // Note: Qdrant doesn't have a direct "get all documents" method
-    // You might need to implement this differently based on your needs
-    return [];
-  } catch (error) {
-    console.error('Error getting all documents:', error);
-    return [];
+    throw new Error(`Failed to process URL: ${error.message}`);
   }
 }

@@ -1,0 +1,13 @@
+Test document content for uploading.
+
+This is a simple text document that can be used to test the upload functionality of the NotebookLM mini clone.
+
+The document contains multiple paragraphs to test text chunking and processing.
+
+Key features to test:
+- Text processing and chunking
+- Vector embedding creation
+- Document storage in Qdrant
+- Chat functionality with the uploaded content
+
+This should be sufficient to verify that the upload and chat systems are working correctly.

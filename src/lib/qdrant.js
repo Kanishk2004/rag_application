@@ -12,21 +12,28 @@ let vectorStore = null;
 
 export async function getVectorStore() {
   if (!vectorStore) {
-    vectorStore = await QdrantVectorStore.fromExistingCollection(embeddings, {
-      url: process.env.QDRANT_URL || 'http://localhost:6333',
-      collectionName: 'notebooklm_mini',
-    });
+    try {
+      // Try to connect to existing collection first
+      vectorStore = await QdrantVectorStore.fromExistingCollection(embeddings, {
+        url: process.env.QDRANT_URL || 'http://localhost:6333',
+        collectionName: 'notebooklm_mini',
+      });
+    } catch (error) {
+      console.log('Collection does not exist, creating new one...');
+      // If collection doesn't exist, create a new vector store
+      vectorStore = new QdrantVectorStore(embeddings, {
+        url: process.env.QDRANT_URL || 'http://localhost:6333',
+        collectionName: 'notebooklm_mini',
+      });
+    }
   }
   return vectorStore;
 }
 
 export async function initializeVectorStore() {
   try {
-    vectorStore = new QdrantVectorStore(embeddings, {
-      url: process.env.QDRANT_URL || 'http://localhost:6333',
-      collectionName: 'notebooklm_mini',
-    });
-    return vectorStore;
+    // Use getVectorStore which handles both cases
+    return await getVectorStore();
   } catch (error) {
     console.error('Error initializing vector store:', error);
     throw error;
