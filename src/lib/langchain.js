@@ -14,8 +14,10 @@ const originalConsoleError = console.error;
 function suppressTokenWarnings() {
 	console.warn = (...args) => {
 		const message = args.join(' ');
-		if (message.includes('Failed to calculate number of tokens') || 
-			message.includes('falling back to approximate count')) {
+		if (
+			message.includes('Failed to calculate number of tokens') ||
+			message.includes('falling back to approximate count')
+		) {
 			return; // Suppress token counting warnings
 		}
 		originalConsoleWarn(...args);
@@ -23,9 +25,11 @@ function suppressTokenWarnings() {
 
 	console.error = (...args) => {
 		const message = args.join(' ');
-		if (message.includes('Failed to calculate number of tokens') || 
+		if (
+			message.includes('Failed to calculate number of tokens') ||
 			message.includes('falling back to approximate count') ||
-			message.includes('ECONNRESET')) {
+			message.includes('ECONNRESET')
+		) {
 			return; // Suppress token counting errors
 		}
 		originalConsoleError(...args);
@@ -49,9 +53,9 @@ const llm = new ChatOpenAI({
 	requestOptions: {
 		// Disable automatic token counting
 		headers: {
-			'User-Agent': 'NotebookLM-Mini/1.0.0'
-		}
-	}
+			'User-Agent': 'NotebookLM-Mini/1.0.0',
+		},
+	},
 });
 
 // RAG prompt template
@@ -129,7 +133,7 @@ export async function getAnswer(question) {
 export async function generateSummary() {
 	try {
 		console.log('Starting summary generation...');
-		
+
 		// Get some representative documents (we'll search for a broad query)
 		const docs = await searchSimilarDocuments(
 			'summary main topics content',
@@ -163,11 +167,11 @@ Please provide a comprehensive summary:`);
 		]);
 
 		const context = formatDocuments(docs);
-		
+
 		// Add retry logic for network issues
 		let summary;
 		let retries = 3;
-		
+
 		while (retries > 0) {
 			try {
 				console.log(`Generating summary (${4 - retries}/3 attempts)...`);
@@ -175,11 +179,14 @@ Please provide a comprehensive summary:`);
 				break;
 			} catch (error) {
 				retries--;
-				if (error.message.includes('ECONNRESET') || error.message.includes('fetch failed')) {
+				if (
+					error.message.includes('ECONNRESET') ||
+					error.message.includes('fetch failed')
+				) {
 					console.log(`Network error, retrying... (${retries} attempts left)`);
 					if (retries === 0) throw error;
 					// Wait before retry
-					await new Promise(resolve => setTimeout(resolve, 2000));
+					await new Promise((resolve) => setTimeout(resolve, 2000));
 				} else {
 					throw error;
 				}

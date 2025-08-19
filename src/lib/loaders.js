@@ -11,41 +11,43 @@ const textSplitter = new RecursiveCharacterTextSplitter({
 });
 
 export async function processFile(file, fileBuffer) {
-	console.log(`Processing file: ${file.name}, type: ${file.type}, size: ${fileBuffer.length} bytes`);
+	console.log(
+		`Processing file: ${file.name}, type: ${file.type}, size: ${fileBuffer.length} bytes`
+	);
 
 	let content = '';
 
 	try {
 		if (file.type === 'application/pdf') {
 			console.log('Processing PDF with pdf2json...');
-			
+
 			// Temporarily suppress console warnings during PDF processing
 			const originalWarn = console.warn;
 			console.warn = () => {}; // Suppress warnings
-			
+
 			try {
 				// Use pdf2json which is more Next.js friendly
 				const PDFParser = (await import('pdf2json')).default;
-				
+
 				// Create a promise-based wrapper for pdf2json
 				const pdfText = await new Promise((resolve, reject) => {
 					const pdfParser = new PDFParser();
-					
+
 					pdfParser.on('pdfParser_dataError', (errData) => {
 						console.error('PDF parsing error:', errData.parserError);
 						reject(new Error(`PDF parsing failed: ${errData.parserError}`));
 					});
-					
+
 					pdfParser.on('pdfParser_dataReady', (pdfData) => {
 						try {
 							// Extract text from parsed PDF data
 							let textContent = '';
 							if (pdfData.Pages) {
-								pdfData.Pages.forEach(page => {
+								pdfData.Pages.forEach((page) => {
 									if (page.Texts) {
-										page.Texts.forEach(text => {
+										page.Texts.forEach((text) => {
 											if (text.R) {
-												text.R.forEach(textRun => {
+												text.R.forEach((textRun) => {
 													if (textRun.T) {
 														textContent += decodeURIComponent(textRun.T) + ' ';
 													}
@@ -58,21 +60,25 @@ export async function processFile(file, fileBuffer) {
 							}
 							resolve(textContent.trim());
 						} catch (parseError) {
-							reject(new Error(`Failed to extract text: ${parseError.message}`));
+							reject(
+								new Error(`Failed to extract text: ${parseError.message}`)
+							);
 						}
 					});
-					
+
 					// Parse the buffer
 					try {
 						pdfParser.parseBuffer(fileBuffer);
 					} catch (bufferError) {
-						reject(new Error(`Failed to parse PDF buffer: ${bufferError.message}`));
+						reject(
+							new Error(`Failed to parse PDF buffer: ${bufferError.message}`)
+						);
 					}
 				});
-				
+
 				content = pdfText;
 				console.log('PDF parsing completed, text length:', content.length);
-				
+
 				if (!content || content.trim().length === 0) {
 					throw new Error('No text content could be extracted from the PDF');
 				}
