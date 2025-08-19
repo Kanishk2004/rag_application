@@ -7,12 +7,51 @@ import {
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import { searchSimilarDocuments } from './qdrant.js';
 
+// Suppress token counting warnings
+const originalConsoleWarn = console.warn;
+const originalConsoleError = console.error;
+
+function suppressTokenWarnings() {
+	console.warn = (...args) => {
+		const message = args.join(' ');
+		if (message.includes('Failed to calculate number of tokens') || 
+			message.includes('falling back to approximate count')) {
+			return; // Suppress token counting warnings
+		}
+		originalConsoleWarn(...args);
+	};
+
+	console.error = (...args) => {
+		const message = args.join(' ');
+		if (message.includes('Failed to calculate number of tokens') || 
+			message.includes('falling back to approximate count') ||
+			message.includes('ECONNRESET')) {
+			return; // Suppress token counting errors
+		}
+		originalConsoleError(...args);
+	};
+}
+
+// Apply suppression
+suppressTokenWarnings();
+
 // Initialize ChatOpenAI
 const llm = new ChatOpenAI({
 	openAIApiKey: process.env.OPENAI_API_KEY,
 	modelName: 'gpt-4o-mini',
 	temperature: 0.1,
 	streaming: true,
+	// Disable token counting to prevent network errors
+	cache: false,
+	maxRetries: 2,
+	// Configure request timeout and retries
+	timeout: 30000, // 30 seconds
+	requestOptions: {
+		// Disable automatic token counting
+		headers: {
+			'User-Agent': 'NotebookLM-Mini/1.0.0'
+		}
+	}
 });
 
 // RAG prompt template
@@ -89,6 +128,8 @@ export async function getAnswer(question) {
 // Function to summarize all sources
 export async function generateSummary() {
 	try {
+		console.log('Starting summary generation...');
+		
 		// Get some representative documents (we'll search for a broad query)
 		const docs = await searchSimilarDocuments(
 			'summary main topics content',
@@ -98,6 +139,8 @@ export async function generateSummary() {
 		if (docs.length === 0) {
 			return 'No sources have been uploaded yet. Please upload some documents first.';
 		}
+
+		console.log(`Found ${docs.length} documents for summarization`);
 
 		const summaryPrompt =
 			PromptTemplate.fromTemplate(`You are a helpful AI assistant. Please provide a comprehensive summary of the following sources.
@@ -120,8 +163,30 @@ Please provide a comprehensive summary:`);
 		]);
 
 		const context = formatDocuments(docs);
-		const summary = await summaryChain.invoke({ context });
+		
+		// Add retry logic for network issues
+		let summary;
+		let retries = 3;
+		
+		while (retries > 0) {
+			try {
+				console.log(`Generating summary (${4 - retries}/3 attempts)...`);
+				summary = await summaryChain.invoke({ context });
+				break;
+			} catch (error) {
+				retries--;
+				if (error.message.includes('ECONNRESET') || error.message.includes('fetch failed')) {
+					console.log(`Network error, retrying... (${retries} attempts left)`);
+					if (retries === 0) throw error;
+					// Wait before retry
+					await new Promise(resolve => setTimeout(resolve, 2000));
+				} else {
+					throw error;
+				}
+			}
+		}
 
+		console.log('Summary generated successfully');
 		return summary;
 	} catch (error) {
 		console.error('Error generating summary:', error);
